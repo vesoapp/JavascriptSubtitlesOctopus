@@ -61,6 +61,16 @@ self.writeAvailableFontsToFS = function(content) {
     }
 };
 
+self.getRenderMethod = function () {
+    if (self.renderMode == 'fast') {
+        return self.fastRender;
+    } else if (self.renderMode == 'blend') {
+        return self.blendRender;
+    } else {
+        return self.render;
+    }
+}
+
 /**
  * Set the subtitle track.
  * @param {!string} content the content of the subtitle file.
@@ -74,11 +84,7 @@ self.setTrack = function (content) {
 
     // Tell libass to render the new track
     self._create_track("/sub.ass");
-    if (self.fastRenderMode) {
-        self.fastRender();
-    } else {
-        self.render();
-    }
+    self.getRenderMethod()();
 };
 
 /**
@@ -86,11 +92,7 @@ self.setTrack = function (content) {
  */
 self.freeTrack = function () {
     self._free_track();
-    if (self.fastRenderMode) {
-        self.fastRender();
-    } else {
-        self.render();
-    }
+    self.getRenderMethod()();
 };
 
 /**
@@ -131,18 +133,10 @@ self.setCurrentTime = function (currentTime) {
     self.lastCurrentTimeReceivedAt = Date.now();
     if (!self.rafId) {
         if (self.nextIsRaf) {
-            if (self.fastRenderMode) {
-                self.rafId = self.requestAnimationFrame(self.fastRender);
-            } else {
-                self.rafId = self.requestAnimationFrame(self.render);
-            }
+            self.rafId = self.requestAnimationFrame(self.getRenderMethod());
         }
         else {
-            if (self.fastRenderMode) {
-                self.fastRender();
-            } else {
-                self.render();
-            }
+            self.getRenderMethod()();
             
             // Give onmessage chance to receive all queued messages
             setTimeout(function () {
@@ -167,12 +161,7 @@ self.setIsPaused = function (isPaused) {
         }
         else {
             self.lastCurrentTimeReceivedAt = Date.now();
-            if (self.fastRenderMode) {
-                self.rafId = self.requestAnimationFrame(self.fastRender);
-            } else {
-                self.rafId = self.requestAnimationFrame(self.render);
-            }
-            
+            self.rafId = self.requestAnimationFrame(self.getRenderMethod());
         }
     }
 };
@@ -508,11 +497,7 @@ function onMessageFromMainEmscriptenThread(message) {
                     Module.canvas.boundingClientRect = message.data.boundingClientRect;
                 }
                 self.resize(message.data.width, message.data.height);
-                if (self.fastRenderMode) {
-                    self.fastRender();
-                } else {
-                    self.render();
-                }
+                self.getRenderMethod()();
             } else throw 'ey?';
             break;
         }
@@ -539,7 +524,8 @@ function onMessageFromMainEmscriptenThread(message) {
             self.subUrl = message.data.subUrl;
             self.subContent = message.data.subContent;
             self.fontFiles = message.data.fonts;
-            self.fastRenderMode = message.data.fastRender;
+            self.renderMode = message.data.renderMode;
+            //self.fastRenderMode = message.data.fastRender;
             self.availableFonts = message.data.availableFonts;
             self.debug = message.data.debug;
             if (!hasNativeConsole && self.debug) {
