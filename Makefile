@@ -26,6 +26,7 @@ dist/libraries/lib/libfribidi.a: lib/fribidi/configure
 		CFLAGS=" \
 		-s USE_PTHREADS=0 \
 		$(GLOBAL_CFLAGS) \
+		-s NO_FILESYSTEM=1 \
 		-s NO_EXIT_RUNTIME=1 \
 		-s STRICT=1 \
 		--llvm-lto 1 \
@@ -56,6 +57,7 @@ dist/libraries/lib/libexpat.a: lib/expat/expat/configured
 		-DCMAKE_C_FLAGS=" \
 		-s USE_PTHREADS=0 \
 		$(GLOBAL_CFLAGS) \
+		-s NO_FILESYSTEM=1 \
 		-s NO_EXIT_RUNTIME=1 \
 		-s STRICT=1 \
 		--llvm-lto 1 \
@@ -108,6 +110,7 @@ lib/freetype/build_hb/dist_hb/lib/libfreetype.a: dist/libraries/lib/libbrotlidec
 		CFLAGS=" \
 		-s USE_PTHREADS=0 \
 		$(GLOBAL_CFLAGS) \
+		-s NO_FILESYSTEM=1 \
 		-s NO_EXIT_RUNTIME=1 \
 		-s STRICT=1 \
 		--llvm-lto 1 \
@@ -143,6 +146,7 @@ dist/libraries/lib/libharfbuzz.a: lib/freetype/build_hb/dist_hb/lib/libfreetype.
 		CFLAGS=" \
 		-s USE_PTHREADS=0 \
 		$(GLOBAL_CFLAGS) \
+		-s NO_FILESYSTEM=1 \
 		-s NO_EXIT_RUNTIME=1 \
 		-s STRICT=1 \
 		--llvm-lto 1 \
@@ -178,6 +182,7 @@ dist/libraries/lib/libfreetype.a: dist/libraries/lib/libharfbuzz.a dist/librarie
 		CFLAGS=" \
 		-s USE_PTHREADS=0 \
 		$(GLOBAL_CFLAGS) \
+		-s NO_FILESYSTEM=1 \
 		-s NO_EXIT_RUNTIME=1 \
 		-s STRICT=1 \
 		--llvm-lto 1 \
@@ -310,16 +315,15 @@ EMCC_COMMON_ARGS = \
 
 dist: src/subtitles-octopus-worker.bc dist/subtitles-octopus-worker.js dist/subtitles-octopus-worker-legacy.js dist/subtitles-octopus.js
 
-dist/subtitles-octopus-worker.js: src/subtitles-octopus-worker.bc
+dist/subtitles-octopus-worker.js: src/subtitles-octopus-worker.bc src/pre-worker.js src/unbrotli.js src/post-worker.js
 	emcc src/subtitles-octopus-worker.bc $(OCTP_DEPS) \
 		--pre-js src/pre-worker.js \
 		--pre-js src/unbrotli.js \
 		--post-js src/post-worker.js \
 		-s WASM=1 \
-		--source-map-base http://localhost:8080/assets/js/ \
 		$(EMCC_COMMON_ARGS)
 
-dist/subtitles-octopus-worker-legacy.js: src/subtitles-octopus-worker.bc
+dist/subtitles-octopus-worker-legacy.js: src/subtitles-octopus-worker.bc src/pre-worker.js src/unbrotli.js src/post-worker.js
 	emcc src/subtitles-octopus-worker.bc $(OCTP_DEPS) \
 		--pre-js src/pre-worker.js \
 		--pre-js src/unbrotli.js \
