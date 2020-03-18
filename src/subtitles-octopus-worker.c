@@ -20,7 +20,7 @@ typedef struct {
 
 buffer_t blend, blend_result;
 
-int buffer_resize(buffer_t *buf, int new_size, int keep_content) {
+void* buffer_resize(buffer_t *buf, int new_size, int keep_content) {
     if (buf->size >= new_size) {
         if (buf->size >= 1.3 * new_size) {
             // big reduction request
@@ -30,7 +30,7 @@ int buffer_resize(buffer_t *buf, int new_size, int keep_content) {
         }
         if (buf->lessen_counter < 30) {
             // not reducing the buffer yet
-            return 1;
+            return buf->buffer;
         }
     }
 
@@ -40,12 +40,12 @@ int buffer_resize(buffer_t *buf, int new_size, int keep_content) {
     } else {
         newbuf = malloc(new_size);
     }
-    if (!newbuf) return 0;
+    if (!newbuf) return NULL;
 
     buf->buffer = newbuf;
     buf->size = new_size;
     buf->lessen_counter = 0;
-    return 1;
+    return buf->buffer;
 }
 
 void buffer_init(buffer_t *buf) {
@@ -97,6 +97,8 @@ void libassjs_init(int frame_w, int frame_h, char *subfile) {
     ass_set_fonts(ass_renderer, "default.woff2", NULL, ASS_FONTPROVIDER_FONTCONFIG, "/fonts.conf", 1);
 
     libassjs_create_track(subfile);
+    buffer_init(&blend);
+    buffer_init(&blend_result);
 }
 
 void libassjs_resize(int frame_w, int frame_h) {
@@ -107,6 +109,9 @@ void libassjs_quit() {
     ass_free_track(track);
     ass_renderer_done(ass_renderer);
     ass_library_done(ass_library);
+
+    free(blend.buffer);
+    free(blend_result.buffer);
 }
 
 ASS_Image * libassjs_render(double tm, int *changed) {
@@ -145,15 +150,15 @@ void* libassjs_render_blend(double tm, int force, int *changed, double *blend_ti
 
     // make float buffer for blending
     int width = max_x - min_x + 1, height = max_y - min_y + 1;
-    float* buf = (float*)malloc(sizeof(float) * width * height * 4);
+    float* buf = (float*)buffer_resize(&blend, sizeof(float) * width * height * 4, 0);
     if (buf == NULL) {
         printf("libass: error: cannot allocate buffer for blending");
         return NULL;
     }
-    unsigned char *result = (unsigned char*)malloc(sizeof(unsigned char) * width * height * 4);
+    unsigned char *result = (unsigned char*)buffer_resize(&blend_result,
+            sizeof(unsigned char) * width * height * 4, 0);
     if (result == NULL) {
         printf("libass: error: cannot allocate result for blending");
-        free(buf);
         return NULL;
     }
     memset(buf, 0, sizeof(float) * width * height * 4);
@@ -215,7 +220,6 @@ void* libassjs_render_blend(double tm, int force, int *changed, double *blend_ti
     }
     
     // return the thing
-    free(buf);
     *dest_x = min_x;
     *dest_y = min_y;
     *dest_width = width;
