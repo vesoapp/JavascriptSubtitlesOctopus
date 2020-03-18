@@ -13,7 +13,7 @@ var SubtitlesOctopus = function (options) {
 
     var self = this;
     self.canvas = options.canvas; // HTML canvas element (optional if video specified)
-    self.lossyRender = options.lossyRender; // Speedup render for heavy subs
+    self.renderMode = options.lossyRender ? 'fast' : (options.blendRender ? 'blend' : 'normal');
     self.isOurCanvas = false; // (internal) we created canvas and manage it
     self.video = options.video; // HTML video element (optional if canvas specified)
     self.canvasParent = null; // (internal) HTML canvas parent element
@@ -99,7 +99,7 @@ var SubtitlesOctopus = function (options) {
             URL: document.URL,
             currentScript: self.workerUrl,
             preMain: true,
-            fastRender: self.lossyRender,
+            renderMode: self.renderMode,
             subUrl: self.subUrl,
             subContent: self.subContent,
             fonts: self.fonts,
@@ -253,7 +253,12 @@ var SubtitlesOctopus = function (options) {
         }
         if (self.debug) {
             var drawTime = Math.round(performance.now() - beforeDrawTime);
-            console.log(Math.round(data.spentTime) + ' ms (+ ' + drawTime + ' ms draw)');
+            var blendTime = data.blendTime || 0;
+            if (blendTime > 0) {
+                console.log('render: ' + Math.round(data.spentTime - blendTime) + ' ms, blend: ' + Math.round(blendTime) + ' ms, draw: ' + drawTime + ' ms');
+            } else {
+                console.log(Math.round(data.spentTime) + ' ms (+ ' + drawTime + ' ms draw)');
+            }
             self.renderStart = performance.now();
         }
     }
