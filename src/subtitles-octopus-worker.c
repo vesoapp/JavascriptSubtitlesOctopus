@@ -28,7 +28,7 @@ void* buffer_resize(buffer_t *buf, int new_size, int keep_content) {
         } else {
             buf->lessen_counter = 0;
         }
-        if (buf->lessen_counter < 30) {
+        if (buf->lessen_counter < 10) {
             // not reducing the buffer yet
             return buf->buffer;
         }
@@ -42,6 +42,7 @@ void* buffer_resize(buffer_t *buf, int new_size, int keep_content) {
     }
     if (!newbuf) return NULL;
 
+    if (!keep_content) free(buf->buffer);
     buf->buffer = newbuf;
     buf->size = new_size;
     buf->lessen_counter = 0;
