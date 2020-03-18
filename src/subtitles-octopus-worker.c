@@ -12,8 +12,49 @@ ASS_Library *ass_library;
 ASS_Renderer *ass_renderer;
 ASS_Track *track;
 
-void msg_callback(int level, const char *fmt, va_list va, void *data)
-{
+typedef struct {
+    void *buffer;
+    int size;
+    int lessen_counter;
+} buffer_t;
+
+buffer_t blend, blend_result;
+
+int buffer_resize(buffer_t *buf, int new_size, int keep_content) {
+    if (buf->size >= new_size) {
+        if (buf->size >= 1.3 * new_size) {
+            // big reduction request
+            buf->lessen_counter++;
+        } else {
+            buf->lessen_counter = 0;
+        }
+        if (buf->lessen_counter < 30) {
+            // not reducing the buffer yet
+            return 1;
+        }
+    }
+
+    void *newbuf;
+    if (keep_content) {
+        newbuf = realloc(buf->buffer, new_size);
+    } else {
+        newbuf = malloc(new_size);
+    }
+    if (!newbuf) return 0;
+
+    buf->buffer = newbuf;
+    buf->size = new_size;
+    buf->lessen_counter = 0;
+    return 1;
+}
+
+void buffer_init(buffer_t *buf) {
+    buf->buffer = NULL;
+    buf->size = -1;
+    buf->lessen_counter = 0;
+}
+
+void msg_callback(int level, const char *fmt, va_list va, void *data) {
     if (level > 5) // 6 for verbose
         return;
     printf("libass: ");
@@ -21,17 +62,14 @@ void msg_callback(int level, const char *fmt, va_list va, void *data)
     printf("\n");
 }
 
-void libassjs_free_track()
-{
-    if (track != NULL)
-    {
+void libassjs_free_track() {
+    if (track != NULL) {
         ass_free_track(track);
         track = NULL;
     }
 }
 
-void libassjs_create_track(char *subfile)
-{
+void libassjs_create_track(char *subfile) {
     libassjs_free_track();
     track = ass_read_file(ass_library, subfile, NULL);
     if (!track) {
@@ -40,8 +78,7 @@ void libassjs_create_track(char *subfile)
     }
 }
 
-void libassjs_init(int frame_w, int frame_h, char *subfile)
-{
+void libassjs_init(int frame_w, int frame_h, char *subfile) {
     ass_library = ass_library_init();
     if (!ass_library) {
         printf("ass_library_init failed!\n");
@@ -62,20 +99,17 @@ void libassjs_init(int frame_w, int frame_h, char *subfile)
     libassjs_create_track(subfile);
 }
 
-void libassjs_resize(int frame_w, int frame_h)
-{
+void libassjs_resize(int frame_w, int frame_h) {
     ass_set_frame_size(ass_renderer, frame_w, frame_h);
 }
 
-void libassjs_quit()
-{
+void libassjs_quit() {
     ass_free_track(track);
     ass_renderer_done(ass_renderer);
     ass_library_done(ass_library);
 }
 
-ASS_Image * libassjs_render(double tm, int *changed)
-{
+ASS_Image * libassjs_render(double tm, int *changed) {
     ASS_Image *img = ass_render_frame(ass_renderer, track, (int) (tm * 1000), changed);
     return img;
 }
@@ -86,13 +120,11 @@ const float MAX_UINT8_CAST = 256.0 / 255;
 #define CLAMP_UINT8(value) ((value > MIN_UINT8_CAST) ? ((value < MAX_UINT8_CAST) ? (int)(value * 255) : 255) : 0)
 
 void* libassjs_render_blend(double tm, int force, int *changed, double *blend_time,
-        int *dest_x, int *dest_y, int *dest_width, int *dest_height)
-{
+        int *dest_x, int *dest_y, int *dest_width, int *dest_height) {
     *blend_time = 0.0;
 
     ASS_Image *img = ass_render_frame(ass_renderer, track, (int)(tm * 1000), changed);
-    if (img == NULL || (*changed == 0 && !force))
-    {
+    if (img == NULL || (*changed == 0 && !force)) {
         return NULL;
     }
 
@@ -102,8 +134,7 @@ void* libassjs_render_blend(double tm, int force, int *changed, double *blend_ti
     int min_x = img->dst_x, min_y = img->dst_y;
     int max_x = img->dst_x + img->w - 1, max_y = img->dst_y + img->h - 1;
     ASS_Image *cur;
-    for (cur = img->next; cur != NULL; cur = cur->next)
-    {
+    for (cur = img->next; cur != NULL; cur = cur->next) {
         if (cur->dst_x < min_x) min_x = cur->dst_x;
         if (cur->dst_y < min_y) min_y = cur->dst_y;
         int right = cur->dst_x + cur->w - 1;
@@ -115,14 +146,12 @@ void* libassjs_render_blend(double tm, int force, int *changed, double *blend_ti
     // make float buffer for blending
     int width = max_x - min_x + 1, height = max_y - min_y + 1;
     float* buf = (float*)malloc(sizeof(float) * width * height * 4);
-    if (buf == NULL)
-    {
+    if (buf == NULL) {
         printf("libass: error: cannot allocate buffer for blending");
         return NULL;
     }
     unsigned char *result = (unsigned char*)malloc(sizeof(unsigned char) * width * height * 4);
-    if (result == NULL)
-    {
+    if (result == NULL) {
         printf("libass: error: cannot allocate result for blending");
         free(buf);
         return NULL;
@@ -131,8 +160,7 @@ void* libassjs_render_blend(double tm, int force, int *changed, double *blend_ti
     memset(result, 0, sizeof(unsigned char) * width * height * 4);
 
     // blend things in
-    for (cur = img; cur != NULL; cur = cur->next)
-    {
+    for (cur = img; cur != NULL; cur = cur->next) {
         int curw = cur->w, curh = cur->h;
         if (curw == 0 || curh == 0) continue; // skip empty images
         int a = (255 - (cur->color & 0xFF));
@@ -171,16 +199,12 @@ void* libassjs_render_blend(double tm, int force, int *changed, double *blend_ti
     }
     
     // now build the result
-    for (int y = 0, buf_line_coord = 0; y < height; y++, buf_line_coord += width)
-    {
-        for (int x = 0; x < width; x++)
-        {
+    for (int y = 0, buf_line_coord = 0; y < height; y++, buf_line_coord += width) {
+        for (int x = 0; x < width; x++) {
             int buf_coord = (buf_line_coord + x) << 2;
             float alpha = buf[buf_coord + 3];
-            if (alpha > MIN_UINT8_CAST)
-            {
-                for (int offset = 0; offset < 3; offset++)
-                {
+            if (alpha > MIN_UINT8_CAST) {
+                for (int offset = 0; offset < 3; offset++) {
                     // need to un-multiply the result
                     float value = buf[buf_coord + offset] / alpha;
                     result[buf_coord + offset] = CLAMP_UINT8(value);
@@ -200,7 +224,6 @@ void* libassjs_render_blend(double tm, int force, int *changed, double *blend_ti
     return result;
 }
 
-int main(int argc, char *argv[])
-{
-    
+int main(int argc, char *argv[]) {
+    return 0;
 }
