@@ -549,6 +549,7 @@ function onMessageFromMainEmscriptenThread(message) {
             }
             self.targetFps = message.data.targetFps || self.targetFps;
             self.libassMemoryLimit = message.data.libassMemoryLimit || self.libassMemoryLimit;
+            self.libassGlyphLimit = message.data.libassGlyphLimit || 0;
             removeRunDependency('worker-init');
             break;
         }

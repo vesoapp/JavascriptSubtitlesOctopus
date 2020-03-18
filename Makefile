@@ -296,7 +296,7 @@ src/subtitles-octopus-worker.bc: src/Makefile src/subtitles-octopus-worker.c
 # Dist Files
 EMCC_COMMON_ARGS = \
 	$(GLOBAL_CFLAGS) \
-	-s EXPORTED_FUNCTIONS="['_main', '_malloc', '_libassjs_init', '_libassjs_quit', '_libassjs_resize', '_libassjs_render', '_libassjs_free_track', '_libassjs_create_track', '_libassjs_render_blend', '_libassjs_set_memory_limit']" \
+	-s EXPORTED_FUNCTIONS="['_main', '_malloc', '_libassjs_init', '_libassjs_quit', '_libassjs_resize', '_libassjs_render', '_libassjs_free_track', '_libassjs_create_track', '_libassjs_render_blend', '_libassjs_set_memory_limits']" \
 	-s EXTRA_EXPORTED_RUNTIME_METHODS="['ccall', 'cwrap', 'getValue', 'FS_createPreloadedFile', 'FS_createFolder']" \
 	-s NO_EXIT_RUNTIME=1 \
 	--use-preload-plugins \
