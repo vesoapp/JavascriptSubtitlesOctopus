@@ -99,6 +99,7 @@ Module['onRuntimeInitialized'] = function () {
     self._create_track = Module['cwrap']('libassjs_create_track', null, ['string']);
 
     self._render_blend = Module['cwrap']('libassjs_render_blend', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']);
+    self._set_memory_limits = Module['cwrap']('libassjs_set_memory_limits', null, ['number', 'number']);
 
     self.quit = Module['cwrap']('libassjs_quit', null, []);
     self.changed = Module._malloc(4);
@@ -110,6 +111,9 @@ Module['onRuntimeInitialized'] = function () {
     self.blendH = Module._malloc(4);
 
     self.init(screen.width, screen.height, "/sub.ass");
+    if (self.libassMemoryLimit > 0 || self.libassGlyphLimit > 0) {
+        self._set_memory_limits(self.libassGlyphLimit, self.libassMemoryLimit);
+    }
 };
 
 Module["print"] = function (text) {

@@ -7,6 +7,7 @@ self.rafId = null;
 self.nextIsRaf = false;
 self.lastCurrentTimeReceivedAt = Date.now();
 self.targetFps = 30;
+self.libassMemoryLimit = 0; // in MiB
 
 self.width = 0;
 self.height = 0;
@@ -546,6 +547,9 @@ function onMessageFromMainEmscriptenThread(message) {
                     Module.canvas.boundingClientRect = message.data.boundingClientRect;
                 }
             }
+            self.targetFps = message.data.targetFps || self.targetFps;
+            self.libassMemoryLimit = message.data.libassMemoryLimit || self.libassMemoryLimit;
+            self.libassGlyphLimit = message.data.libassGlyphLimit || 0;
             removeRunDependency('worker-init');
             break;
         }

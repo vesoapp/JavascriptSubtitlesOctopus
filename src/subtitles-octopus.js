@@ -14,6 +14,9 @@ var SubtitlesOctopus = function (options) {
     var self = this;
     self.canvas = options.canvas; // HTML canvas element (optional if video specified)
     self.renderMode = options.lossyRender ? 'fast' : (options.blendRender ? 'blend' : 'normal');
+    self.libassMemoryLimit = options.libassMemoryLimit || 0;
+    self.libassGlyphLimit = options.libassGlyphLimit || 0;
+    self.targetFps = options.targetFps || undefined;
     self.isOurCanvas = false; // (internal) we created canvas and manage it
     self.video = options.video; // HTML video element (optional if canvas specified)
     self.canvasParent = null; // (internal) HTML canvas parent element
@@ -104,7 +107,10 @@ var SubtitlesOctopus = function (options) {
             subContent: self.subContent,
             fonts: self.fonts,
             availableFonts: self.availableFonts,
-            debug: self.debug
+            debug: self.debug,
+            targetFps: self.targetFps,
+            libassMemoryLimit: self.libassMemoryLimit,
+            libassGlyphLimit: self.libassGlyphLimit
         });
     };
 
@@ -253,9 +259,9 @@ var SubtitlesOctopus = function (options) {
         }
         if (self.debug) {
             var drawTime = Math.round(performance.now() - beforeDrawTime);
-            var blendTime = data.blendTime || 0;
-            if (blendTime > 0) {
-                console.log('render: ' + Math.round(data.spentTime - blendTime) + ' ms, blend: ' + Math.round(blendTime) + ' ms, draw: ' + drawTime + ' ms');
+            var blendTime = data.blendTime;
+            if (typeof blendTime !== 'undefined') {
+                console.log('render: ' + Math.round(data.spentTime - blendTime) + ' ms, blend: ' + Math.round(blendTime) + ' ms, draw: ' + drawTime + ' ms; TOTAL=' + Math.round(data.spentTime + drawTime) + ' ms');
             } else {
                 console.log(Math.round(data.spentTime) + ' ms (+ ' + drawTime + ' ms draw)');
             }

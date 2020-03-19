@@ -122,6 +122,12 @@ ASS_Image * libassjs_render(double tm, int *changed) {
     return img;
 }
 
+void libassjs_set_memory_limits(int glyph_limit, int bitmap_cache_limit) {
+    printf("libass: setting total libass memory limits to: glyph=%d MiB, bitmap cache=%d MiB\n",
+        glyph_limit, bitmap_cache_limit);
+    ass_set_cache_limits(ass_renderer, glyph_limit, bitmap_cache_limit);
+}
+
 const float MIN_UINT8_CAST = 0.9 / 255;
 const float MAX_UINT8_CAST = 255.9 / 255;
 
