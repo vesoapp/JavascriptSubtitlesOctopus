@@ -1,5 +1,3 @@
-//var Module = Module || {};
-
 if (!String.prototype.endsWith) {
 	String.prototype.endsWith = function(search, this_len) {
 		if (this_len === undefined || this_len > this.length) {
@@ -49,7 +47,7 @@ Module["preRun"] = Module["preRun"] || [];
 
 Module["preRun"].push(function () {
     var i;
-    
+
     Module["FS_createFolder"]("/", "fonts", true, true);
 
     if (!self.subContent) {
@@ -60,7 +58,7 @@ Module["preRun"].push(function () {
             self.subContent = read_(self.subUrl);
         }
     }
-    
+
     if (self.availableFonts && self.availableFonts.length !== 0) {
         var sections = parseAss(self.subContent);
             for (var i = 0; i < sections.length; i++) {
@@ -70,7 +68,7 @@ Module["preRun"].push(function () {
                     }
                 }
             }
-            
+
             var regex = /\\fn([^\\}]*?)[\\}]/g;
             var matches;
             while (matches = regex.exec(self.subContent)) {
@@ -92,27 +90,19 @@ Module["preRun"].push(function () {
 });
 
 Module['onRuntimeInitialized'] = function () {
-    self.init = Module['cwrap']('libassjs_init', 'number', ['number', 'number', 'string']);
-    self._resize = Module['cwrap']('libassjs_resize', null, ['number', 'number']);
-    self._render = Module['cwrap']('libassjs_render', null, ['number', 'number']);
-    self._free_track = Module['cwrap']('libassjs_free_track', null, null);
-    self._create_track = Module['cwrap']('libassjs_create_track', null, ['string']);
+    self.octObj = new Module.SubtitleOctopus();
 
-    self._render_blend = Module['cwrap']('libassjs_render_blend', null, ['number', 'number', 'number', 'number', 'number', 'number', 'number', 'number']);
-    self._set_memory_limits = Module['cwrap']('libassjs_set_memory_limits', null, ['number', 'number']);
-
-    self.quit = Module['cwrap']('libassjs_quit', null, []);
     self.changed = Module._malloc(4);
 
-    self.blendTime = Module._malloc(8);
-    self.blendX = Module._malloc(4);
-    self.blendY = Module._malloc(4);
-    self.blendW = Module._malloc(4);
-    self.blendH = Module._malloc(4);
+    self.octObj.initLibrary(screen.width, screen.height);
+    self.octObj.setDropAnimations(!!self.dropAllAnimations);
+    self.octObj.createTrack("/sub.ass");
+    self.ass_track = self.octObj.track;
+    self.ass_library = self.octObj.ass_library;
+    self.ass_renderer = self.octObj.ass_renderer;
 
-    self.init(screen.width, screen.height, "/sub.ass");
     if (self.libassMemoryLimit > 0 || self.libassGlyphLimit > 0) {
-        self._set_memory_limits(self.libassGlyphLimit, self.libassMemoryLimit);
+        self.octObj.setMemoryLimits(self.libassGlyphLimit, self.libassMemoryLimit);
     }
 };
 

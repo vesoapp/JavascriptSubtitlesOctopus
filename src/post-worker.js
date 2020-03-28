@@ -8,6 +8,8 @@ self.nextIsRaf = false;
 self.lastCurrentTimeReceivedAt = Date.now();
 self.targetFps = 30;
 self.libassMemoryLimit = 0; // in MiB
+self.renderOnDemand = false; // determines if only rendering on demand
+self.dropAllAnimations = false; // set to true to enable "lite mode" with all animations disabled for speed
 
 self.width = 0;
 self.height = 0;
@@ -21,11 +23,11 @@ self.fontId = 0;
  */
 self.writeFontToFS = function(font) {
     font = font.trim().toLowerCase();
-    
+
     if (font.startsWith("@")) {
         font = font.substr(1);
     }
-    
+
     if (self.fontMap_.hasOwnProperty(font)) return;
 
     self.fontMap_[font] = true;
@@ -33,7 +35,7 @@ self.writeFontToFS = function(font) {
     if (!self.availableFonts.hasOwnProperty(font)) return;
     var content = readBinary(self.availableFonts[font]);
 
-    Module["FS"].writeFile('/fonts/font' + (self.fontId++) + '-' + self.availableFonts[font].split('/').pop(), content, { 
+    Module["FS"].writeFile('/fonts/font' + (self.fontId++) + '-' + self.availableFonts[font].split('/').pop(), content, {
         encoding: 'binary'
     });
 };
@@ -54,7 +56,7 @@ self.writeAvailableFontsToFS = function(content) {
             }
         }
     }
-    
+
     var regex = /\\fn([^\\}]*?)[\\}]/g;
     var matches;
     while (matches = regex.exec(self.subContent)) {
@@ -84,16 +86,21 @@ self.setTrack = function (content) {
     Module["FS"].writeFile("/sub.ass", content);
 
     // Tell libass to render the new track
-    self._create_track("/sub.ass");
-    self.getRenderMethod()();
+    self.octObj.createTrack("/sub.ass");
+    self.ass_track = self.octObj.track;
+    if (!self.renderOnDemand) {
+        self.getRenderMethod()();
+    }
 };
 
 /**
  * Remove subtitle track.
  */
 self.freeTrack = function () {
-    self._free_track();
-    self.getRenderMethod()();
+    self.octObj.removeTrack();
+    if (!self.renderOnDemand) {
+        self.getRenderMethod()();
+    }
 };
 
 /**
@@ -113,7 +120,7 @@ self.setTrackByUrl = function (url) {
 self.resize = function (width, height) {
     self.width = width;
     self.height = height;
-    self._resize(width, height);
+    self.octObj.resizeCanvas(width, height);
 };
 
 self.getCurrentTime = function () {
@@ -134,11 +141,15 @@ self.setCurrentTime = function (currentTime) {
     self.lastCurrentTimeReceivedAt = Date.now();
     if (!self.rafId) {
         if (self.nextIsRaf) {
-            self.rafId = self.requestAnimationFrame(self.getRenderMethod());
+            if (!self.renderOnDemand) {
+                self.rafId = self.requestAnimationFrame(self.getRenderMethod());
+            }
         }
         else {
-            self.getRenderMethod()();
-            
+            if (!self.renderOnDemand) {
+                self.getRenderMethod()();
+            }
+
             // Give onmessage chance to receive all queued messages
             setTimeout(function () {
                 self.nextIsRaf = false;
@@ -162,7 +173,9 @@ self.setIsPaused = function (isPaused) {
         }
         else {
             self.lastCurrentTimeReceivedAt = Date.now();
-            self.rafId = self.requestAnimationFrame(self.getRenderMethod());
+            if (!self.renderOnDemand) {
+                self.rafId = self.requestAnimationFrame(self.getRenderMethod());
+            }
         }
     }
 };
@@ -171,7 +184,7 @@ self.render = function (force) {
     self.rafId = 0;
     self.renderPending = false;
     var startTime = performance.now();
-    var renderResult = self._render(self.getCurrentTime() + self.delay, self.changed);
+    var renderResult = self.octObj.renderImage(self.getCurrentTime() + self.delay, self.changed);
     var changed = Module.getValue(self.changed, 'i32');
     if (changed != 0 || force) {
         var result = self.buildResult(renderResult);
@@ -190,39 +203,44 @@ self.render = function (force) {
     }
 };
 
+self.blendRenderTiming = function (timing, force) {
+    var startTime = performance.now();
+
+    var renderResult = self.octObj.renderBlend(timing, force);
+    var blendTime = renderResult.blend_time;
+    var canvases = [], buffers = [];
+    if (renderResult.ptr != 0 && (renderResult.changed != 0 || force)) {
+        // make a copy, as we should free the memory so subsequent calls can utilize it
+        for (var part = renderResult.part; part.ptr != 0; part = part.next) {
+            var result = new Uint8Array(HEAPU8.subarray(part.image, part.image + part.dest_width * part.dest_height * 4));
+            canvases.push({w: part.dest_width, h: part.dest_height, x: part.dest_x, y: part.dest_y, buffer: result.buffer});
+            buffers.push(result.buffer);
+        }
+    }
+
+    return {
+        time: Date.now(),
+        spentTime: performance.now() - startTime,
+        blendTime: blendTime,
+        canvases: canvases,
+        buffers: buffers
+    }
+}
+
 self.blendRender = function (force) {
     self.rafId = 0;
     self.renderPending = false;
-    var startTime = performance.now();
 
-    var renderResult = self._render_blend(self.getCurrentTime() + self.delay, force ? 1 : 0,
-                                          self.changed, self.blendTime,
-                                          self.blendX, self.blendY, self.blendW, self.blendH);
-    var changed = Module.getValue(self.changed, 'i32');
-    var blendTime = Module.getValue(self.blendTime, 'double');
-    if (changed != 0 || force) {
-        var canvases, buffers;
-        if (renderResult) {
-            var blendX = Module.getValue(self.blendX, 'i32');
-            var blendY = Module.getValue(self.blendY, 'i32');
-            var blendW = Module.getValue(self.blendW, 'i32');
-            var blendH = Module.getValue(self.blendH, 'i32');
-            // make a copy, as we should free the memory so subsequent calls can utilize it
-            var result = new Uint8Array(HEAPU8.subarray(renderResult, renderResult + blendW * blendH * 4));
-
-            canvases = [{w: blendW, h: blendH, x: blendX, y: blendY, buffer: result.buffer}];
-            buffers = [result.buffer];
-        } else {
-            canvases = buffers = [];
-        }
+    var rendered = self.blendRenderTiming(self.getCurrentTime() + self.delay, force);
+    if (rendered.canvases.length > 0) {
         postMessage({
             target: 'canvas',
             op: 'renderCanvas',
-            time: Date.now(),
-            spentTime: performance.now() - startTime,
-            blendTime: blendTime,
-            canvases: canvases
-        }, buffers);
+            time: rendered.time,
+            spentTime: rendered.spentTime,
+            blendTime: rendered.blendTime,
+            canvases: rendered.canvases
+        }, rendered.buffers);
     }
 
     if (!self._isPaused) {
@@ -230,11 +248,43 @@ self.blendRender = function (force) {
     }
 };
 
+self.oneshotRender = function (lastRenderedTime, renderNow, iteration) {
+    var eventStart = renderNow ? lastRenderedTime : self.octObj.findNextEventStart(lastRenderedTime);
+    var eventFinish = -1.0, emptyFinish = -1.0, animated = false;
+    var rendered = {};
+    if (eventStart >= 0) {
+        eventTimes = self.octObj.findEventStopTimes(eventStart);
+        eventFinish = eventTimes.eventFinish;
+        emptyFinish = eventTimes.emptyFinish;
+        animated = eventTimes.is_animated;
+
+        rendered = self.blendRenderTiming(eventStart, true);
+    }
+
+    postMessage({
+        target: 'canvas',
+        op: 'oneshot-result',
+        iteration: iteration,
+        lastRenderedTime: lastRenderedTime,
+        eventStart: eventStart,
+        eventFinish: eventFinish,
+        emptyFinish: emptyFinish,
+        animated: animated,
+        viewport: {
+            width: self.width,
+            height: self.height
+        },
+        spentTime: rendered.spentTime || 0,
+        blendTime: rendered.blendTime || 0,
+        canvases: rendered.canvases || []
+    }, rendered.buffers || []);
+}
+
 self.fastRender = function (force) {
     self.rafId = 0;
     self.renderPending = false;
     var startTime = performance.now();
-    var renderResult = self._render(self.getCurrentTime() + self.delay, self.changed);
+    var renderResult = self.octObj.renderImage(self.getCurrentTime() + self.delay, self.changed);
     var changed = Module.getValue(self.changed, "i32");
     if (changed != 0 || force) {
         var result = self.buildResult(renderResult);
@@ -274,24 +324,24 @@ self.buildResult = function (ptr) {
     var transferable = [];
     var item;
 
-    while (ptr != 0) {
+    while (ptr.ptr != 0) {
         item = self.buildResultItem(ptr);
         if (item !== null) {
             items.push(item);
             transferable.push(item.buffer);
         }
-        ptr = Module.getValue(ptr + 28, '*');
+        ptr = ptr.next;
     }
 
     return [items, transferable];
-};
+}
 
 self.buildResultItem = function (ptr) {
-    var bitmap = Module.getValue(ptr + 12, '*'),
-        stride = Module.getValue(ptr + 8, 'i32'),
-        w = Module.getValue(ptr + 0, 'i32'),
-        h = Module.getValue(ptr + 4, 'i32'),
-        color = Module.getValue(ptr + 16, 'i32');
+    var bitmap = ptr.bitmap,
+        stride = ptr.stride,
+        w = ptr.w,
+        h = ptr.h,
+        color = ptr.color;
 
     if (w == 0 || h == 0) {
         return null;
@@ -319,8 +369,8 @@ self.buildResultItem = function (ptr) {
         bitmapPosition += stride;
     }
 
-    x = Module.getValue(ptr + 20, 'i32');
-    y = Module.getValue(ptr + 24, 'i32');
+    x = ptr.dst_x;
+    y = ptr.dst_y;
 
     return {w: w, h: h, x: x, y: y, buffer: result.buffer};
 };
@@ -506,7 +556,9 @@ function onMessageFromMainEmscriptenThread(message) {
                     Module.canvas.boundingClientRect = message.data.boundingClientRect;
                 }
                 self.resize(message.data.width, message.data.height);
-                self.getRenderMethod()();
+                if (!self.renderOnDemand) {
+                    self.getRenderMethod()();
+                }
             } else throw 'ey?';
             break;
         }
@@ -550,11 +602,18 @@ function onMessageFromMainEmscriptenThread(message) {
             self.targetFps = message.data.targetFps || self.targetFps;
             self.libassMemoryLimit = message.data.libassMemoryLimit || self.libassMemoryLimit;
             self.libassGlyphLimit = message.data.libassGlyphLimit || 0;
+            self.renderOnDemand = message.data.renderOnDemand || false;
+            self.dropAllAnimations = message.data.dropAllAnimations || false;
             removeRunDependency('worker-init');
             break;
         }
+        case 'oneshot-render':
+            self.oneshotRender(message.data.lastRendered,
+                    message.data.renderNow || false,
+                    message.data.iteration);
+            break;
         case 'destroy':
-            self.quit();
+            self.octObj.quitLibrary();
             break;
         case 'free-track':
             self.freeTrack();
@@ -564,6 +623,121 @@ function onMessageFromMainEmscriptenThread(message) {
             break;
         case 'set-track-by-url':
             self.setTrackByUrl(message.data.url);
+            break;
+        case 'create-event':
+            var event = message.data.event;
+            var i = self.octObj.allocEvent();
+            var evnt_ptr = self.octObj.track.get_events(i);
+            var vargs = Object.keys(event);
+
+            for (const varg of vargs) {
+                evnt_ptr[varg] = event[varg];
+            }
+            break;
+        case 'get-events':
+            var events = [];
+            for (var i = 0; i < self.octObj.getEventCount(); i++) {
+                var evnt_ptr = self.octObj.track.get_events(i);
+                var event = {
+                    Start: evnt_ptr.get_Start(),
+                    Duration: evnt_ptr.get_Duration(),
+                    ReadOrder: evnt_ptr.get_ReadOrder(),
+                    Layer: evnt_ptr.get_Layer(),
+                    Style: evnt_ptr.get_Style(),
+                    Name: evnt_ptr.get_Name(),
+                    MarginL: evnt_ptr.get_MarginL(),
+                    MarginR: evnt_ptr.get_MarginR(),
+                    MarginV: evnt_ptr.get_MarginV(),
+                    Effect: evnt_ptr.get_Effect(),
+                    Text: evnt_ptr.get_Text()
+                };
+
+                events.push(event);
+            }
+            postMessage({
+                target: "get-events",
+                time: Date.now(),
+                events: events
+            });
+            break;
+        case 'set-event':
+            var event = message.data.event;
+            var i = message.data.index;
+            var evnt_ptr = self.octObj.track.get_events(i);
+            
+            var vargs = Object.keys(event);
+
+            for (const varg of vargs) {
+                evnt_ptr[varg] = event[varg];
+            }
+            break;
+        case 'remove-event':
+            var i = message.data.index;
+            self.octObj.removeEvent(i);
+            break;
+        case 'create-style':
+            var style = message.data.style;
+            var i = self.octObj.allocStyle();
+            var styl_ptr = self.octObj.track.get_styles(i);
+            var vargs = Object.keys(style);
+
+            for (const varg of vargs) {
+                styl_ptr[varg] = style[varg];
+            }
+            break;
+        case 'get-styles':
+            var styles = [];
+            for (var i = 0; i < self.octObj.getStyleCount(); i++) {
+                var styl_ptr = self.octObj.track.get_styles(i);
+                var style = {
+                    Name: styl_ptr.get_Name(),
+                    FontName: styl_ptr.get_FontName(),
+                    FontSize: styl_ptr.get_FontSize(),
+                    PrimaryColour: styl_ptr.get_PrimaryColour(),
+                    SecondaryColour: styl_ptr.get_SecondaryColour(),
+                    OutlineColour: styl_ptr.get_OutlineColour(),
+                    BackColour: styl_ptr.get_BackColour(),
+                    Bold: styl_ptr.get_Bold(),
+                    Italic: styl_ptr.get_Italic(),
+                    Underline: styl_ptr.get_Underline(),
+                    StrikeOut: styl_ptr.get_StrikeOut(),
+                    ScaleX: styl_ptr.get_ScaleX(),
+                    ScaleY: styl_ptr.get_ScaleY(),
+                    Spacing: styl_ptr.get_Spacing(),
+                    Angle: styl_ptr.get_Angle(),
+                    BorderStyle: styl_ptr.get_BorderStyle(),
+                    Outline: styl_ptr.get_Outline(),
+                    Shadow: styl_ptr.get_Shadow(),
+                    Alignment: styl_ptr.get_Alignment(),
+                    MarginL: styl_ptr.get_MarginL(),
+                    MarginR: styl_ptr.get_MarginR(),
+                    MarginV: styl_ptr.get_MarginV(),
+                    Encoding: styl_ptr.get_Encoding(),
+                    treat_fontname_as_pattern: styl_ptr.get_treat_fontname_as_pattern(),
+                    Blur: styl_ptr.get_Blur(),
+                    Justify: styl_ptr.get_Justify()
+                };
+                styles.push(style);
+            }
+            postMessage({
+                target: "get-styles",
+                time: Date.now(),
+                styles: styles
+            });
+            break;
+        case 'set-style':
+            var style = message.data.style;
+            var i = message.data.index;
+            var styl_ptr = self.octObj.track.get_styles(i);
+            var vargs = Object.keys(style);
+
+            for (const varg of vargs) {
+                styl_ptr[varg] = style[varg];
+            }
+            break;
+        case 'remove-style':
+            var i = message.data.index;
+            self.octObj.removeStyle(i);
             break;
         case 'runBenchmark': {
             self.runBenchmark();
